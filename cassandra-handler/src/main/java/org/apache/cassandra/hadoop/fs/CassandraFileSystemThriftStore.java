@@ -27,6 +27,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.exceptions.IsBootstrappingException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.hadoop.ColumnFamilyOutputFormat;
+import org.apache.cassandra.hadoop.ConfigHelper;
 import org.apache.cassandra.io.IColumnSerializer;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.IndexHelper;
@@ -146,6 +147,10 @@ public class CassandraFileSystemThriftStore implements CassandraFileSystemStore 
 
     if (port == -1)
       port = DatabaseDescriptor.getRpcPort(); // default
+
+    if (ConfigHelper.getOutputKeyspace(conf) == null) {
+      ConfigHelper.setOutputKeyspace(conf, keySpace);
+    }
 
     try {
       client = ColumnFamilyOutputFormat.createAuthenticatedClient(host, port, conf);

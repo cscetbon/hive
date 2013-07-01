@@ -51,6 +51,8 @@ public class SchemaLoader {
 
     try {
       Schema.instance.load(schemaDefinition());
+    } catch (RuntimeException re) {
+      logger.error("ERROR OCCURED... CONTINUING IGNORING EVEYTHING!", re);
     } catch (ConfigurationException e) {
       throw new RuntimeException(e);
     }

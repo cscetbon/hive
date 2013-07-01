@@ -4,27 +4,18 @@ import static org.junit.Assert.*;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.cassandra.config.KSMetaData;
-import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.db.marshal.IntegerType;
-import org.apache.cassandra.db.marshal.LongType;
-import org.apache.cassandra.db.marshal.TimeUUIDType;
-import org.apache.cassandra.db.marshal.UTF8Type;
-import org.apache.cassandra.thrift.CfDef;
-import org.apache.cassandra.thrift.ColumnDef;
 import org.apache.cassandra.thrift.KsDef;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.cassandra.CassandraClientHolder;
+import org.apache.hadoop.hive.cassandra.CassandraProxyClient;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 
@@ -41,7 +32,11 @@ public class SchemaManagerServiceTest extends MetaStoreTestBase
                 
         configuration = buildConfiguration();
         if ( cassandraClientHolder == null )
-            cassandraClientHolder = new CassandraClientHolder(configuration);
+            cassandraClientHolder = new CassandraProxyClient(configuration.get(SchemaManagerService.CONF_PARAM_HOST, "localhost"),
+                    configuration.getInt(SchemaManagerService.CONF_PARAM_PORT, 9170),
+                    configuration.getBoolean(SchemaManagerService.CONF_PARAM_FRAMED, true),
+                    CassandraProxyClient.ConnectionStrategy.valueOf(configuration.get(SchemaManagerService.CONF_PARAM_CONNECTION_STRATEGY, "RANDOM"))
+                            .getValue()).getConnection();
         if ( cassandraHiveMetaStore == null)
         {
             cassandraHiveMetaStore = new CassandraHiveMetaStore();
@@ -62,7 +57,7 @@ public class SchemaManagerServiceTest extends MetaStoreTestBase
     @Test
     public void testDiscoverUnmappedKeyspaces() throws Exception 
     {        
-        cassandraClientHolder.getClient().system_add_keyspace(setupOtherKeyspace(configuration,"OtherKeyspace", false)); 
+        cassandraClientHolder.getClient().system_add_keyspace(setupOtherKeyspace(configuration,"OtherKeyspace", false));
         // init the meta store for usage
 
         List<KsDef> keyspaces = schemaManagerService.findUnmappedKeyspaces();
@@ -102,7 +97,7 @@ public class SchemaManagerServiceTest extends MetaStoreTestBase
     public void testSkipCreateOnConfig() throws Exception
     {
         KsDef ksDef = setupOtherKeyspace(configuration,"SkipCreatedKeyspace", false);
-        cassandraClientHolder.getClient().system_add_keyspace(ksDef);               
+        cassandraClientHolder.getClient().system_add_keyspace(ksDef);
         
         schemaManagerService.createKeyspaceSchemasIfNeeded();
         List<KsDef> keyspaces = schemaManagerService.findUnmappedKeyspaces();

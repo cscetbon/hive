@@ -2,13 +2,16 @@ package org.apache.cassandra.contrib.utils.service;
 
 import java.io.File;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
+import org.apache.cassandra.config.CFMetaData;
+import org.apache.cassandra.config.KSMetaData;
+import org.apache.cassandra.config.Schema;
+import org.apache.cassandra.db.ColumnFamilyType;
+import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.LexicalUUIDType;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.SimpleStrategy;
 import org.apache.cassandra.service.CassandraDaemon;
 import org.apache.cassandra.thrift.CfDef;
 import org.apache.cassandra.thrift.Column;
@@ -45,8 +48,7 @@ public class CassandraEmbeddedTestSetup {
   CassandraDaemon cassandra;
 
 
-  public CassandraEmbeddedTestSetup() throws Exception
-  {
+  public CassandraEmbeddedTestSetup() throws Exception {
     CassandraServiceDataCleaner cleaner = new CassandraServiceDataCleaner();
     cleaner.prepare();
 
@@ -57,9 +59,11 @@ public class CassandraEmbeddedTestSetup {
 
       // Make sure that this server is connectable.
       CassandraProxyClient client = new CassandraProxyClient(
-          "127.0.0.1", 9170, true, true);
+              "127.0.0.1", 9170, true, true);
 
       client.getProxyConnection().describe_cluster_name();
+
+      loadSchema();
 
       //create schema for a column family and insert some data into it
       createCFSchema(client);
@@ -85,7 +89,7 @@ public class CassandraEmbeddedTestSetup {
 
     ks.setName(KS);
     ks.setStrategy_class("org.apache.cassandra.locator.SimpleStrategy");
-    Map<String, String> strategy_options = new HashMap<String, String> ();
+    Map<String, String> strategy_options = new HashMap<String, String>();
     strategy_options.put("replication_factor", "1");
     ks.setStrategy_options(strategy_options);
 
@@ -98,15 +102,15 @@ public class CassandraEmbeddedTestSetup {
     cf.setKey_validation_class(utfType);
 
     cf.setColumn_metadata(
-        Arrays.asList(new ColumnDef(UUID_KEY, "LexicalUUIDType").
-                          setIndex_type(IndexType.KEYS).
-                          setIndex_name(UUID_STR),
-                      new ColumnDef(LONG_KEY, "LongType").
-                          setIndex_type(IndexType.KEYS).
-                          setIndex_name(LONG_STR),
-                      new ColumnDef(INT_KEY, "IntegerType").
-                          setIndex_type(IndexType.KEYS).
-                          setIndex_name(INT_STR)));
+            Arrays.asList(new ColumnDef(UUID_KEY, "LexicalUUIDType").
+                    setIndex_type(IndexType.KEYS).
+                    setIndex_name(UUID_STR),
+                    new ColumnDef(LONG_KEY, "LongType").
+                            setIndex_type(IndexType.KEYS).
+                            setIndex_name(LONG_STR),
+                    new ColumnDef(INT_KEY, "IntegerType").
+                            setIndex_type(IndexType.KEYS).
+                            setIndex_name(INT_STR)));
 
     ks.addToCf_defs(cf);
     client.getProxyConnection().system_add_keyspace(ks);
@@ -115,25 +119,25 @@ public class CassandraEmbeddedTestSetup {
 
   private void addCFData(CassandraProxyClient client) throws Exception {
     //add data into this column family
-    Map<ByteBuffer,Map<String,List<Mutation>>> mutation_map = new HashMap<ByteBuffer,Map<String,List<Mutation>>>();
+    Map<ByteBuffer, Map<String, List<Mutation>>> mutation_map = new HashMap<ByteBuffer, Map<String, List<Mutation>>>();
 
     long timestamp = System.currentTimeMillis();
     Map<String, List<Mutation>> map1 = new HashMap<String, List<Mutation>>();
     List<Mutation> mutationList = new ArrayList<Mutation>();
     addColumnToMutation(mutationList,
-      UUID_STR.getBytes(),
-      LexicalUUIDType.instance.fromString("4fd1d3a0-a76d-11e0-0000-c6fa7f155dfe"),
-      timestamp);
+            UUID_STR.getBytes(),
+            LexicalUUIDType.instance.fromString("4fd1d3a0-a76d-11e0-0000-c6fa7f155dfe"),
+            timestamp);
 
     addColumnToMutation(mutationList,
-      LONG_STR.getBytes(),
-      ByteBufferUtil.bytes((long)1223456),
-      timestamp);
+            LONG_STR.getBytes(),
+            ByteBufferUtil.bytes((long) 1223456),
+            timestamp);
 
     addColumnToMutation(mutationList,
-      INT_STR.getBytes(),
-      ByteBufferUtil.bytes((int)234),
-      timestamp);
+            INT_STR.getBytes(),
+            ByteBufferUtil.bytes((int) 234),
+            timestamp);
 
     map1.put(CF, mutationList);
 
@@ -165,7 +169,7 @@ public class CassandraEmbeddedTestSetup {
 
     ks.setName(SUPERKS);
     ks.setStrategy_class("org.apache.cassandra.locator.SimpleStrategy");
-    Map<String, String> strategy_options = new HashMap<String, String> ();
+    Map<String, String> strategy_options = new HashMap<String, String>();
     strategy_options.put("replication_factor", "1");
     ks.setStrategy_options(strategy_options);
 
@@ -181,19 +185,19 @@ public class CassandraEmbeddedTestSetup {
 
   private void addSuperCFData(CassandraProxyClient client) throws Exception {
     //add data into this column family
-    Map<ByteBuffer,Map<String,List<Mutation>>> mutation_map = new HashMap<ByteBuffer,Map<String,List<Mutation>>>();
+    Map<ByteBuffer, Map<String, List<Mutation>>> mutation_map = new HashMap<ByteBuffer, Map<String, List<Mutation>>>();
 
     long timestamp = System.currentTimeMillis();
     Map<String, List<Mutation>> map1 = new HashMap<String, List<Mutation>>();
     List<Mutation> mutationList = new ArrayList<Mutation>();
 
     addSuperColumnToMutation(mutationList,
-      "key1".getBytes("utf-8"),
-      timestamp);
+            "key1".getBytes("utf-8"),
+            timestamp);
 
     addSuperColumnToMutation(mutationList,
-      "key2".getBytes("utf-8"),
-      timestamp);
+            "key2".getBytes("utf-8"),
+            timestamp);
 
     map1.put(SUPERCF, mutationList);
 
@@ -208,7 +212,7 @@ public class CassandraEmbeddedTestSetup {
 
     Column col = new Column();
     col.setName(LONG_STR.getBytes("utf-8"));
-    col.setValue(ByteBufferUtil.bytes((long)1223456));
+    col.setValue(ByteBufferUtil.bytes((long) 1223456));
     col.setTimestamp(timestamp);
 
     superCol.addToColumns(col);
@@ -238,7 +242,7 @@ public class CassandraEmbeddedTestSetup {
 
     ks.setName(COUNTERKS);
     ks.setStrategy_class("org.apache.cassandra.locator.SimpleStrategy");
-    Map<String, String> strategy_options = new HashMap<String, String> ();
+    Map<String, String> strategy_options = new HashMap<String, String>();
     strategy_options.put("replication_factor", "1");
     ks.setStrategy_options(strategy_options);
 
@@ -250,53 +254,94 @@ public class CassandraEmbeddedTestSetup {
     cf.setKey_validation_class("UTF8Type");
 
 
-
     ks.addToCf_defs(cf);
     client.getProxyConnection().system_add_keyspace(ks);
     client.getProxyConnection().set_keyspace(COUNTERKS);
   }
 
   private void addCounterCFData(CassandraProxyClient client) throws Exception {
-      //add data into this column family
-      Map<ByteBuffer,Map<String,List<Mutation>>> mutation_map = new HashMap<ByteBuffer,Map<String,List<Mutation>>>();
-      Map<String, List<Mutation>> map1 = new HashMap<String, List<Mutation>>();
-      List<Mutation> mutationList = new ArrayList<Mutation>();
+    //add data into this column family
+    Map<ByteBuffer, Map<String, List<Mutation>>> mutation_map = new HashMap<ByteBuffer, Map<String, List<Mutation>>>();
+    Map<String, List<Mutation>> map1 = new HashMap<String, List<Mutation>>();
+    List<Mutation> mutationList = new ArrayList<Mutation>();
 
-      addCounterColumnToMutation(mutationList,
-              COUNTER_LONG_STR.getBytes(),
-              123456);
+    addCounterColumnToMutation(mutationList,
+            COUNTER_LONG_STR.getBytes(),
+            123456);
 
-      map1.put(COUNTERCF, mutationList);
+    map1.put(COUNTERCF, mutationList);
 
-      mutation_map.put(ByteBufferUtil.bytes("counterRow1"), map1);
-      mutation_map.put(ByteBufferUtil.bytes("counterRow2"), map1);
+    mutation_map.put(ByteBufferUtil.bytes("counterRow1"), map1);
+    mutation_map.put(ByteBufferUtil.bytes("counterRow2"), map1);
 
-      client.getProxyConnection().batch_mutate(mutation_map, ConsistencyLevel.ONE);
+    client.getProxyConnection().batch_mutate(mutation_map, ConsistencyLevel.ONE);
   }
 
   private void addCounterColumnToMutation(List<Mutation> mutationList, byte[] key, long value) throws Exception {
-      CounterColumn cassCol = new CounterColumn();
-      cassCol.setName(key);
-      cassCol.setValue(value);
+    CounterColumn cassCol = new CounterColumn();
+    cassCol.setName(key);
+    cassCol.setValue(value);
 
-      ColumnOrSuperColumn thisCol = new ColumnOrSuperColumn();
-      thisCol.setCounter_column(cassCol);
-      Mutation mutation = new Mutation();
-      mutation.setColumn_or_supercolumn(thisCol);
+    ColumnOrSuperColumn thisCol = new ColumnOrSuperColumn();
+    thisCol.setCounter_column(cassCol);
+    Mutation mutation = new Mutation();
+    mutation.setColumn_or_supercolumn(thisCol);
 
-      mutationList.add(mutation);
+    mutationList.add(mutation);
   }
 
 
   public void stop() throws Exception {
-      if (cassandra != null)
-      {
-        cassandra.stop(null);
-        cassandra = null;
+    if (cassandra != null) {
+      cassandra.stop(null);
+      cassandra = null;
 
-        CassandraServiceDataCleaner cleaner = new CassandraServiceDataCleaner();
-        cleaner.prepare();
-     }
+      CassandraServiceDataCleaner cleaner = new CassandraServiceDataCleaner();
+      cleaner.prepare();
+    }
+  }
+
+  public String ksName = "TestKeyspace";
+  public String cfName = "TestColumnFamily";
+
+  private void loadSchema() {
+    for (KSMetaData ksm : schemaDefinition()) {
+      for (CFMetaData cfm : ksm.cfMetaData().values()) {
+
+        Schema.instance.load(cfm);
+      }
+      Schema.instance.setTableDefinition(ksm);
+    }
+  }
+
+  private Collection<KSMetaData> schemaDefinition() {
+    List<KSMetaData> schema = new ArrayList<KSMetaData>();
+
+    Class<? extends AbstractReplicationStrategy> simple = SimpleStrategy.class;
+
+    Map<String, String> opts_rf1 = KSMetaData.optsWithRF(1);
+
+    // initial test keyspace
+    schema.add(KSMetaData.testMetadata(
+            ksName,
+            simple,
+            opts_rf1,
+            // Add more Column Families as needed
+            standardCFMD(ksName, cfName)));
+
+    schema.add(KSMetaData.testMetadata(
+            "cfs",
+            simple,
+            opts_rf1,
+            // Add more Column Families as needed
+            standardCFMD(ksName, "dummy")));
+
+
+    return schema;
+  }
+
+  private static CFMetaData standardCFMD(String ksName, String cfName) {
+    return new CFMetaData(ksName, cfName, ColumnFamilyType.Standard, BytesType.instance, null);
   }
 
 }

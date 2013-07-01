@@ -25,17 +25,17 @@ import java.util.Arrays;
 
 public abstract class MetaStoreTestBase extends CleanupHelper {
 
-  @BeforeClass
+  /* @BeforeClass
   public static void setup() throws TException, IOException, InterruptedException, ConfigurationException, CassandraException {
     BaseCassandraConnection.getInstance().maybeStartServer();
-  }
+  }  */
 
   protected Configuration buildConfiguration() {
     Configuration conf = new Configuration();
-    conf.set(CassandraClientHolder.CONF_PARAM_HOST, "localhost");
-    conf.setInt(CassandraClientHolder.CONF_PARAM_PORT, DatabaseDescriptor.getRpcPort());
-    conf.setBoolean(CassandraClientHolder.CONF_PARAM_FRAMED, true);
-    conf.set(CassandraClientHolder.CONF_PARAM_CONNECTION_STRATEGY, "STICKY");
+    conf.set(SchemaManagerService.CONF_PARAM_HOST, "localhost");
+    conf.setInt(SchemaManagerService.CONF_PARAM_PORT, 9170);
+    conf.setBoolean(SchemaManagerService.CONF_PARAM_FRAMED, true);
+    conf.set(SchemaManagerService.CONF_PARAM_CONNECTION_STRATEGY, "STICKY");
     conf.set("hive.metastore.warehouse.dir", "cfs:///user/hive/warehouse");
     return conf;
   }
@@ -66,7 +66,7 @@ public abstract class MetaStoreTestBase extends CleanupHelper {
     KsDef ks = new KsDef(ksName,
             "org.apache.cassandra.locator.SimpleStrategy",
             Arrays.asList(cf));
-    ks.setStrategy_options(KSMetaData.optsWithRF(configuration.getInt(CassandraClientHolder.CONF_PARAM_REPLICATION_FACTOR, 1)));
+    ks.setStrategy_options(KSMetaData.optsWithRF(configuration.getInt(SchemaManagerService.CONF_PARAM_REPLICATION_FACTOR, 1)));
     return ks;
   }
 }

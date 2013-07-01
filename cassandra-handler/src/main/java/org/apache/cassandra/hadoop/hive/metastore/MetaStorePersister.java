@@ -20,6 +20,9 @@ package org.apache.cassandra.hadoop.hive.metastore;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import org.apache.hadoop.hive.cassandra.CassandraClientHolder;
+import org.apache.hadoop.hive.cassandra.CassandraException;
+import org.apache.hadoop.hive.cassandra.CassandraProxyClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,216 +35,210 @@ import org.apache.thrift.meta_data.FieldMetaData;
 
 /**
  * Generically persist and load the Hive Meta Store model classes
- * 
- *
  */
-public class MetaStorePersister
-{
-    private static final String COL_NAME_SEP = "::";
+public class MetaStorePersister {
+  private static final String COL_NAME_SEP = "::";
 
-    private static final Logger log = LoggerFactory.getLogger(MetaStorePersister.class);
-    
-    private TSerializer serializer;
-    private TDeserializer deserializer;
-    private CassandraClientHolder cassandraClientHolder;
-    
-    public MetaStorePersister(Configuration conf) 
-    {
-        cassandraClientHolder = new CassandraClientHolder(conf);
-        cassandraClientHolder.applyKeyspace();
+  private static final Logger log = LoggerFactory.getLogger(MetaStorePersister.class);
+  private final String metaStoreKeyspace;
+  private final String metaStoreColumnFamily;
+
+  private TSerializer serializer;
+  private TDeserializer deserializer;
+  //private CassandraClientHolder cassandraClientHolder;
+  private CassandraProxyClient cassandraProxyClient;
+
+  ConsistencyLevel readCl;
+  ConsistencyLevel writeCl;
+
+
+  public MetaStorePersister(Configuration conf) {
+    metaStoreKeyspace = conf.get(SchemaManagerService.CONF_PARAM_KEYSPACE_NAME, SchemaManagerService.DEF_META_STORE_KEYSPACE);
+    metaStoreColumnFamily = conf.get(SchemaManagerService.CONF_PARAM_CF_NAME, SchemaManagerService.DEF_META_STORE_CF);
+
+    this.readCl = ConsistencyLevel.findByValue(conf.getInt(SchemaManagerService.CONF_PARAM_READ_CL, ConsistencyLevel.QUORUM.getValue()));
+    this.writeCl = ConsistencyLevel.findByValue(conf.getInt(SchemaManagerService.CONF_PARAM_WRITE_CL, ConsistencyLevel.QUORUM.getValue()));
+
+
+    try {
+      this.cassandraProxyClient = new CassandraProxyClient(conf.get(SchemaManagerService.CONF_PARAM_HOST, "localhost"),
+              conf.getInt(SchemaManagerService.CONF_PARAM_PORT, 9160),
+              conf.getBoolean(SchemaManagerService.CONF_PARAM_FRAMED, true),
+              CassandraProxyClient.ConnectionStrategy.valueOf(conf.get(SchemaManagerService.CONF_PARAM_CONNECTION_STRATEGY, "RANDOM"))
+                      .getValue());
+    } catch (CassandraException e) {
+      e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
     }
 
-    @SuppressWarnings("unchecked")
-    public void save(Map<? extends TFieldIdEnum, FieldMetaData> metaData,
-            TBase base, String databaseName) throws CassandraHiveMetaStoreException
-    {
-        databaseName = databaseName.toLowerCase();
-        // FIXME turns out metaData is not needed anymore. Remove from sig.
-        // TODO need to add ID field to column name lookup to avoid overwrites
-        if ( log.isDebugEnabled() )
-            log.debug("in save with class: {} dbname: {}", base, databaseName);
-        serializer = new TSerializer();        
-        BatchMutation batchMutation = new BatchMutation();
+    try {
+      cassandraProxyClient.getConnection().setKeyspace(metaStoreKeyspace);
+    } catch (CassandraException e) {
+      log.error("Error initializing MetastorePersister", e);
+    }
+  }
 
-        try
-        {
-            batchMutation.addInsertion(ByteBufferUtil.bytes(databaseName), 
-                    Arrays.asList(cassandraClientHolder.getColumnFamily()), 
-                    new Column()
-            .setName(ByteBufferUtil.bytes(buildEntityColumnName(base)))
-            .setValue(ByteBuffer.wrap(serializer.serialize(base)))
-            .setTimestamp(System.currentTimeMillis()));
-                       
-            cassandraClientHolder.getClient().batch_mutate(batchMutation.getMutationMap(),
-                    cassandraClientHolder.getWriteCl());
-        } 
-        catch (Exception e)
-        {
-            // TODO add exception handling wrapper
-            throw new CassandraHiveMetaStoreException(e.getMessage(), e);
-        }
+  @SuppressWarnings("unchecked")
+  public void save(Map<? extends TFieldIdEnum, FieldMetaData> metaData,
+                   TBase base, String databaseName) throws CassandraHiveMetaStoreException {
+    databaseName = databaseName.toLowerCase();
+    // FIXME turns out metaData is not needed anymore. Remove from sig.
+    // TODO need to add ID field to column name lookup to avoid overwrites
+    if (log.isDebugEnabled())
+      log.debug("in save with class: {} dbname: {}", base, databaseName);
+    serializer = new TSerializer();
+    BatchMutation batchMutation = new BatchMutation();
 
+    try {
+      batchMutation.addInsertion(ByteBufferUtil.bytes(databaseName),
+              Arrays.asList(metaStoreColumnFamily),
+              new Column()
+                      .setName(ByteBufferUtil.bytes(buildEntityColumnName(base)))
+                      .setValue(ByteBuffer.wrap(serializer.serialize(base)))
+                      .setTimestamp(System.currentTimeMillis()));
+
+      cassandraProxyClient.getProxyConnection().batch_mutate(batchMutation.getMutationMap(),
+              writeCl);
+    } catch (Exception e) {
+      // TODO add exception handling wrapper
+      throw new CassandraHiveMetaStoreException(e.getMessage(), e);
     }
-    
-    @SuppressWarnings("unchecked")
-    public TBase load(TBase base, String databaseName) 
-        throws CassandraHiveMetaStoreException, NotFoundException
-    {
-        databaseName = databaseName.toLowerCase();
-        if ( log.isDebugEnabled() )
-            log.debug("in load with class: {} dbname: {}", base.getClass().getName(), databaseName);
-        deserializer = new TDeserializer();        
-        try 
-        {
-            ColumnPath columnPath = new ColumnPath(cassandraClientHolder.getColumnFamily());
-            columnPath.setColumn(ByteBufferUtil.bytes(buildEntityColumnName(base)));
-            ColumnOrSuperColumn cosc = cassandraClientHolder.getClient()
-                .get(ByteBufferUtil.bytes(databaseName), columnPath, 
-                        cassandraClientHolder.getReadCl());
-            deserializer.deserialize(base, cosc.getColumn().getValue());
-        } 
-        catch (NotFoundException nfe)
-        {
-            throw nfe;
-        }
-        catch (Exception e) 
-        {
-            // TODO same exception handling wrapper as above
-            throw new CassandraHiveMetaStoreException(e.getMessage(), e);
-        }                
-        return base;
+
+  }
+
+  @SuppressWarnings("unchecked")
+  public TBase load(TBase base, String databaseName)
+          throws CassandraHiveMetaStoreException, NotFoundException {
+    databaseName = databaseName.toLowerCase();
+    if (log.isDebugEnabled())
+      log.debug("in load with class: {} dbname: {}", base.getClass().getName(), databaseName);
+    deserializer = new TDeserializer();
+    try {
+      ColumnPath columnPath = new ColumnPath(metaStoreColumnFamily);
+      columnPath.setColumn(ByteBufferUtil.bytes(buildEntityColumnName(base)));
+      ColumnOrSuperColumn cosc = cassandraProxyClient.getProxyConnection()
+              .get(ByteBufferUtil.bytes(databaseName), columnPath,
+                      readCl);
+      deserializer.deserialize(base, cosc.getColumn().getValue());
+    } catch (NotFoundException nfe) {
+      throw nfe;
+    } catch (Exception e) {
+      // TODO same exception handling wrapper as above
+      throw new CassandraHiveMetaStoreException(e.getMessage(), e);
     }
-    
-    public List<TBase> find(TBase base, String databaseName) 
-    throws CassandraHiveMetaStoreException
-    {
-        return find(base, databaseName, null, 100);
+    return base;
+  }
+
+  public List<TBase> find(TBase base, String databaseName)
+          throws CassandraHiveMetaStoreException {
+    return find(base, databaseName, null, 100);
+  }
+
+  @SuppressWarnings("unchecked")
+  public List<TBase> find(TBase base, String databaseName, String prefix, int count)
+          throws CassandraHiveMetaStoreException {
+    databaseName = databaseName.toLowerCase();
+    if (log.isDebugEnabled())
+      log.debug("in find with class: {} dbname: {} prefix: {} and count: {}",
+              new Object[]{base.getClass().getName(), databaseName, prefix, count});
+    if (count < 0) {
+      // TODO make this a config parameter.
+      count = 100;
     }
-    
-    @SuppressWarnings("unchecked")
-    public List<TBase> find(TBase base, String databaseName, String prefix, int count) 
-        throws CassandraHiveMetaStoreException
-    {
-        databaseName = databaseName.toLowerCase();
-        if ( log.isDebugEnabled() )
-            log.debug("in find with class: {} dbname: {} prefix: {} and count: {}", 
-                    new Object[]{base.getClass().getName(), databaseName, prefix, count});
-        if ( count < 0 ) {
-            // TODO make this a config parameter.
-            count = 100;
-        }
-        deserializer = new TDeserializer();
-        
-        List<TBase> resultList;
-        try 
-        {
-            SlicePredicate predicate = new SlicePredicate();
-            predicate.setSlice_range(buildEntitySlicePrefix(base, prefix, count));            
-            List<ColumnOrSuperColumn> cols = cassandraClientHolder.getClient().get_slice(ByteBufferUtil.bytes(databaseName), 
-                    new ColumnParent(cassandraClientHolder.getColumnFamily()), 
-                    predicate, 
-                    cassandraClientHolder.getReadCl());
-            resultList = new ArrayList<TBase>(cols.size());
-            for (ColumnOrSuperColumn cosc : cols)
-            {
-                TBase other = base.getClass().newInstance();
-                deserializer.deserialize(other, cosc.getColumn().getValue());                
-                resultList.add(other);
-            }             
-        } 
-        catch (Exception e) 
-        {
-            // TODO same exception handling wrapper as above
-            throw new CassandraHiveMetaStoreException(e.getMessage(), e);
-        }                
-        return resultList;
+    deserializer = new TDeserializer();
+
+    List<TBase> resultList;
+    try {
+      SlicePredicate predicate = new SlicePredicate();
+      predicate.setSlice_range(buildEntitySlicePrefix(base, prefix, count));
+      List<ColumnOrSuperColumn> cols = cassandraProxyClient.getProxyConnection().get_slice(ByteBufferUtil.bytes(databaseName),
+              new ColumnParent(metaStoreColumnFamily),
+              predicate,
+              readCl);
+      resultList = new ArrayList<TBase>(cols.size());
+      for (ColumnOrSuperColumn cosc : cols) {
+        TBase other = base.getClass().newInstance();
+        deserializer.deserialize(other, cosc.getColumn().getValue());
+        resultList.add(other);
+      }
+    } catch (Exception e) {
+      // TODO same exception handling wrapper as above
+      throw new CassandraHiveMetaStoreException(e.getMessage(), e);
     }
-    
-    @SuppressWarnings("unchecked")
-    public void remove(TBase base, String databaseName) 
-    {
-        removeAll(Arrays.asList(base), databaseName);    
+    return resultList;
+  }
+
+  @SuppressWarnings("unchecked")
+  public void remove(TBase base, String databaseName) {
+    removeAll(Arrays.asList(base), databaseName);
+  }
+
+  @SuppressWarnings("unchecked")
+  public void removeAll(List<TBase> bases, String databaseName) {
+    databaseName = databaseName.toLowerCase();
+    serializer = new TSerializer();
+    BatchMutation batchMutation = new BatchMutation();
+    try {
+      Deletion deletion = new Deletion().setTimestamp(System.currentTimeMillis());
+      SlicePredicate predicate = new SlicePredicate();
+
+      for (TBase tBase : bases) {
+        if (log.isDebugEnabled())
+          log.debug("in remove with class: {} dbname: {}", tBase, databaseName);
+        predicate.addToColumn_names(ByteBufferUtil.bytes(buildEntityColumnName(tBase)));
+      }
+      deletion.setPredicate(predicate);
+      batchMutation.addDeletion(ByteBufferUtil.bytes(databaseName),
+              Arrays.asList(metaStoreColumnFamily), deletion);
+      cassandraProxyClient.getProxyConnection().batch_mutate(batchMutation.getMutationMap(),
+              writeCl);
+    } catch (Exception e) {
+      throw new CassandraHiveMetaStoreException(e.getMessage(), e);
     }
-    
-    @SuppressWarnings("unchecked")
-    public void removeAll(List<TBase> bases, String databaseName) 
-    {
-        databaseName = databaseName.toLowerCase();
-        serializer = new TSerializer();        
-        BatchMutation batchMutation = new BatchMutation();     
-        try
-        {    
-            Deletion deletion = new Deletion().setTimestamp(System.currentTimeMillis());
-            SlicePredicate predicate = new SlicePredicate();
-            
-            for (TBase tBase : bases)
-            {
-                if ( log.isDebugEnabled() )
-                    log.debug("in remove with class: {} dbname: {}", tBase, databaseName);
-                predicate.addToColumn_names(ByteBufferUtil.bytes(buildEntityColumnName(tBase)));            
-            }
-            deletion.setPredicate(predicate);
-            batchMutation.addDeletion(ByteBufferUtil.bytes(databaseName), 
-                    Arrays.asList(cassandraClientHolder.getColumnFamily()), deletion);            
-            cassandraClientHolder.getClient().batch_mutate(batchMutation.getMutationMap(),
-                    cassandraClientHolder.getWriteCl());
-        } 
-        catch (Exception e)
-        {            
-            throw new CassandraHiveMetaStoreException(e.getMessage(), e);
-        }
-    
+
+  }
+
+  private String buildEntityColumnName(TBase base) {
+    StringBuilder colName = new StringBuilder(96);
+    colName.append(base.getClass().getName()).append(COL_NAME_SEP);
+    if (base instanceof Database) {
+      colName.append(((Database) base).getName().toLowerCase());
+    } else if (base instanceof Table) {
+      colName.append(((Table) base).getTableName().toLowerCase());
+    } else if (base instanceof Index) {
+      colName.append(((Index) base).getOrigTableName())
+              .append(COL_NAME_SEP)
+              .append(((Index) base).getIndexName());
+    } else if (base instanceof Partition) {
+      colName.append(((Partition) base).getTableName().toLowerCase());
+      for (String value : ((Partition) base).getValues()) {
+        colName.append(COL_NAME_SEP).append(value);
+      }
+    } else if (base instanceof Type) {
+      colName.append(((Type) base).getName());
+    } else if (base instanceof Role) {
+      colName.append(((Role) base).getRoleName());
     }
-    
-    private String buildEntityColumnName(TBase base) {
-        StringBuilder colName = new StringBuilder(96);
-        colName.append(base.getClass().getName()).append(COL_NAME_SEP);
-        if ( base instanceof Database )
-        {
-            colName.append(((Database)base).getName().toLowerCase());
-        } else if ( base instanceof Table ) 
-        {
-            colName.append(((Table)base).getTableName().toLowerCase());
-        } else if ( base instanceof Index ) 
-        {
-            colName.append(((Index)base).getOrigTableName())
-            .append(COL_NAME_SEP)
-            .append(((Index)base).getIndexName());
-        } else if ( base instanceof Partition ) 
-        {
-            colName.append(((Partition)base).getTableName().toLowerCase());
-            for( String value : ((Partition)base).getValues()) 
-            {
-                colName.append(COL_NAME_SEP).append(value);
-            }
-        } else if ( base instanceof Type )
-        {
-            colName.append(((Type)base).getName());            
-        } else if ( base instanceof Role)
-        {
-            colName.append(((Role)base).getRoleName());
-        } 
-        if ( log.isDebugEnabled() )
-            log.debug("Constructed columnName: {}", colName);
-        return colName.toString();
-    }
-    
-    /**
-     * Construct a basic slice op, since we do most of our filtering client side
-     *     
-     * @param base the object we use for the column name
-     * @param prefix the prefix to prepend. Can be null.
-     * @param count the number of items to which we restrict this predicate
-     */
-    private SliceRange buildEntitySlicePrefix(TBase base, String prefix, int count) {
-        StringBuilder colName = new StringBuilder(96);
-        colName.append(base.getClass().getName()).append(COL_NAME_SEP);
-        if ( prefix != null && !prefix.isEmpty() ) 
-            colName.append(prefix);
-        SliceRange sliceRange = new SliceRange(ByteBufferUtil.bytes(colName.toString()), 
-                ByteBufferUtil.bytes(colName.append("|").toString()), false, count);
-        if ( log.isDebugEnabled() )
-            log.debug("Constructed columnName for slice: {}", colName);
-        return sliceRange;
-    }
+    if (log.isDebugEnabled())
+      log.debug("Constructed columnName: {}", colName);
+    return colName.toString();
+  }
+
+  /**
+   * Construct a basic slice op, since we do most of our filtering client side
+   *
+   * @param base   the object we use for the column name
+   * @param prefix the prefix to prepend. Can be null.
+   * @param count  the number of items to which we restrict this predicate
+   */
+  private SliceRange buildEntitySlicePrefix(TBase base, String prefix, int count) {
+    StringBuilder colName = new StringBuilder(96);
+    colName.append(base.getClass().getName()).append(COL_NAME_SEP);
+    if (prefix != null && !prefix.isEmpty())
+      colName.append(prefix);
+    SliceRange sliceRange = new SliceRange(ByteBufferUtil.bytes(colName.toString()),
+            ByteBufferUtil.bytes(colName.append("|").toString()), false, count);
+    if (log.isDebugEnabled())
+      log.debug("Constructed columnName for slice: {}", colName);
+    return sliceRange;
+  }
 }

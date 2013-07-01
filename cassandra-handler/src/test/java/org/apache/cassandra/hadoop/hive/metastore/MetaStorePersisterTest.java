@@ -19,6 +19,7 @@ package org.apache.cassandra.hadoop.hive.metastore;
 
 import org.apache.cassandra.thrift.NotFoundException;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.cassandra.CassandraClientHolder;
 import org.apache.hadoop.hive.metastore.api.Database;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.junit.Test;

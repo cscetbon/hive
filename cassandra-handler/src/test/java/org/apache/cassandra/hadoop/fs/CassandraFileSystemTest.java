@@ -52,10 +52,10 @@ public class CassandraFileSystemTest extends CleanupHelper {
    * @throws java.io.IOException
    * @throws InterruptedException
    */
-  @BeforeClass
+  /* @BeforeClass
   public static void setup() throws TException, CassandraException, IOException {
     BaseCassandraConnection.getInstance().maybeStartServer();
-  }
+  }  */
 
 
   @Test
@@ -71,7 +71,7 @@ public class CassandraFileSystemTest extends CleanupHelper {
   private void testFileSystem(boolean flush) throws Exception {
     CassandraFileSystem fs = new CassandraFileSystem();
 
-    fs.initialize(URI.create("cfs://localhost:" + DatabaseDescriptor.getRpcPort() + "/"), new Configuration());
+    fs.initialize(URI.create("cfs://localhost:" + 9170 + "/"), new Configuration());
 
     fs.mkdirs(new Path("/mytestdir"));
     fs.mkdirs(new Path("/mytestdir/sub1"));

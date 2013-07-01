@@ -56,10 +56,10 @@ public class CassandraOutputStreamTest extends CleanupHelper {
    * @throws java.io.IOException
    * @throws InterruptedException
    */
-  @BeforeClass
+  /*@BeforeClass
   public static void setup() throws TException, IOException, InterruptedException, ConfigurationException, CassandraException {
     BaseCassandraConnection.getInstance().maybeStartServer();
-  }
+  }  */
 
   private CassandraOutputStream out;
 

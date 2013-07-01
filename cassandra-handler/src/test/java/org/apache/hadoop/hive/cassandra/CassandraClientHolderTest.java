@@ -16,7 +16,7 @@ public class CassandraClientHolderTest extends TestCase {
   private BaseCassandraConnection bcc = BaseCassandraConnection.getInstance();
 
   public void testBuildClientHolder() throws Exception {
-    bcc.maybeStartServer();
+    //bcc.maybeStartServer();
     TSocket socket = new TSocket("127.0.0.1", 9170);
     TTransport trans = new TFramedTransport(socket);
 
@@ -28,7 +28,7 @@ public class CassandraClientHolderTest extends TestCase {
 
   public void testIsOpen() {
     try {
-      bcc.maybeStartServer();
+      //bcc.maybeStartServer();
       TSocket socket = new TSocket("127.0.0.1", 9170);
       TTransport trans = new TFramedTransport(socket);
       CassandraClientHolder clientHolder = new CassandraClientHolder(trans, bcc.ksName);
@@ -42,7 +42,7 @@ public class CassandraClientHolderTest extends TestCase {
   }
 
   public void testSetKeyspace() throws Exception {
-    bcc.maybeStartServer();
+    //bcc.maybeStartServer();
     TSocket socket = new TSocket("127.0.0.1", 9170);
     TTransport trans = new TFramedTransport(socket);
     CassandraClientHolder clientHolder = new CassandraClientHolder(trans);
