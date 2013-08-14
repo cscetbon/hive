@@ -184,6 +184,11 @@ public class CassandraHiveRecordReader extends RecordReader<BytesWritable, MapWr
         currentValue.clear();
 
         if (next) {
+        	
+        	// Skip deleted rows
+        	if(cfrr.getCurrentValue().size()==0)
+        		return nextKeyValue();
+        	
             currentKey = convertByteBuffer(cfrr.getCurrentKey());
 
             // rowKey
