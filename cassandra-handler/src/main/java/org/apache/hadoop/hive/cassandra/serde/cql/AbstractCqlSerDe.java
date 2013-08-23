@@ -6,7 +6,6 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.cassandra.input.cql.LazyCqlRow;
 import org.apache.hadoop.hive.cassandra.output.CassandraPut;
-import org.apache.hadoop.hive.cassandra.serde.RegularTableMapping;
 import org.apache.hadoop.hive.cassandra.serde.TableMapping;
 import org.apache.hadoop.hive.serde.Constants;
 import org.apache.hadoop.hive.serde2.SerDe;
@@ -299,6 +298,26 @@ public abstract class AbstractCqlSerDe implements SerDe {
     return result;
   }
 
+  protected int parseIndexOfKeyColumn(Properties tbl){
+      String prop = tbl.getProperty(CASSANDRA_COL_MAPPING);
+      //Default first column is taken as key column.
+      int colIndex = 0;
+      if (prop != null) {
+          assert StringUtils.isNotBlank(prop);
+          String[] columnArray = prop.split(",");
+          String[] trimmedColumnArray = trim(columnArray);
+
+          List<String> columnList = Arrays.asList(trimmedColumnArray);
+
+          colIndex = columnList.indexOf(CASSANDRA_KEY_COLUMN);
+          if (colIndex == -1) {
+              //Default first column is taken as key column.
+              colIndex = 0;
+          }
+      }
+      return colIndex;
+  }
+
   /**
    * Parse the column mappping from table properties. If cassandra.columns.mapping
    * is defined in the property, use it to create the mapping. Otherwise, create the mapping from table
@@ -341,7 +360,7 @@ public abstract class AbstractCqlSerDe implements SerDe {
    *
    */
   protected void setTableMapping() throws SerDeException {
-    mapping = new RegularTableMapping(cassandraColumnFamily, cassandraColumnNames, serdeParams);
+    mapping = new CqlRegularTableMapping(cassandraColumnFamily, cassandraColumnNames, serdeParams, iKey);
   }
 
   /**
