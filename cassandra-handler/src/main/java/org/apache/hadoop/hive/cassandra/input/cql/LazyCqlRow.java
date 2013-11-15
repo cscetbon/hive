@@ -96,7 +96,6 @@ public class LazyCqlRow extends LazyStruct {
   private Object uncheckedGetField(int fieldID) {
     if (!getFieldInited()[fieldID]) {
       getFieldInited()[fieldID] = true;
-      ByteArrayRef ref = null;
       String columnName = cassandraColumns.get(fieldID);
       Text columnNameText = cassandraColumnsBB.get(fieldID);
 
@@ -110,14 +109,14 @@ public class LazyCqlRow extends LazyStruct {
         BytesWritable columnValue = (BytesWritable) columnMap.get(columnNameText);
 
         if (columnValue != null) {
-          ref = new ByteArrayRef();
+          final ByteArrayRef ref = new ByteArrayRef();
           ref.setData(columnValue.getBytes());
+          // columnValue.getBytes() might have spare capacity; data is only
+          // valid up to columnValue.getLength()
+          obj.init(ref, 0, columnValue.getLength());
         } else {
           return null;
         }
-      }
-      if (ref != null) {
-        obj.init(ref, 0, ref.getData().length);
       }
     }
     return getFields()[fieldID].getObject();
